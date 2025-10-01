@@ -1,18 +1,18 @@
-# 🚀 WhatsApp Autopilot IA: Tu Asistente Personal con Memoria
+# 🚀 WhatsApp Autopilot IA: Tu Asistente Personal con Memoria (Versión Robusta)
 
-**Transforma tu WhatsApp en un asistente inteligente que responde mensajes 24/7, recuerda conversaciones y sigue tus instrucciones. ¡Todo con el poder de Tasker y la IA!**
+**Transforma tu WhatsApp en un asistente inteligente que responde mensajes 24/7, recuerda conversaciones, sigue tus instrucciones y es estable ante fallos y mensajes simultáneos.**
 
-Este proyecto es una guía completa para construir un sistema de auto-respuesta para WhatsApp (o cualquier app de mensajería) en Android. A diferencia de los respondedores básicos, este asistente se conecta a una API de IA (compatible con OpenAI GPT, Google Gemini, etc.) para mantener conversaciones coherentes y personalizadas con cada contacto, gracias a un sistema de memoria persistente.
+Este proyecto es una guía completa y probada para construir un sistema de auto-respuesta para WhatsApp (o cualquier app de mensajería) en Android. A diferencia de los respondedores básicos, este asistente se conecta a una API de IA (compatible con OpenAI GPT, Google Gemini, etc.) para mantener conversaciones coherentes y personalizadas, gracias a un sistema de memoria persistente y múltiples capas de seguridad.
 
 ---
 
 ## ✨ Características Principales
 
 * **Memoria Persistente:** Recuerda el historial de cada conversación de forma individual.
-* **Personalización Dinámica:** Saluda a cada contacto por su nombre y puede adaptar sus instrucciones sobre la marcha.
-* **Filtrado Inteligente:** Ignora automáticamente notificaciones resumen y mensajes de chats de grupo.
-* **Gestión de Colisiones Profesional:** Utiliza un sistema de "cerrojo" (mutex) para manejar múltiples mensajes simultáneos de forma ordenada y sin cruzar conversaciones.
-* **Sistema a Prueba de Fallos:** Diseñado para ser robusto, con mecanismos que previenen errores comunes y aseguran que el sistema siempre se recupere.
+* **Personalización Dinámica:** Saluda a cada contacto por su primer nombre y puede adaptar sus instrucciones sobre la marcha.
+* **Filtrado Inteligente Avanzado:** Ignora automáticamente notificaciones resumen, chats de grupo y sus propias respuestas para evitar bucles infinitos.
+* **Gestión de Colisiones Profesional:** Utiliza un sistema de "cerrojo" (mutex) y un "watchdog" de auto-reseteo para manejar múltiples mensajes simultáneos de forma ordenada, sin cruzar conversaciones ni bloquearse.
+* **Sistema a Prueba de Fallos:** Diseñado para ser robusto, con acciones que continúan tras un error para garantizar que el sistema siempre se recupere y libere los bloqueos.
 * **Base de Conocimiento Centralizada:** Se programa a través de un `prompt` en formato JSON, permitiendo definir fácilmente reglas, precios y la personalidad del asistente.
 
 ## 📋 Requisitos Previos
@@ -46,7 +46,7 @@ Este proyecto es una guía completa para construir un sistema de auto-respuesta 
 
 ### Paso 2: Creación del Perfil (El Activador Inteligente)
 
-* **Por qué:** Este perfil es el "guardia de seguridad". Su configuración es crucial para asegurar que la tarea solo se active con notificaciones de mensajes individuales y respondibles, ignorando todo lo demás.
+* **Por qué:** Este perfil es el "guardia de seguridad". Su configuración es crucial para asegurar que la tarea solo se active con notificaciones que nos interesan.
 * **Nombre Sugerido para el Perfil:** `Asistente IA Trigger`
 * **Acción:**
     1.  Ve a la pestaña **PERFILES** y crea un nuevo perfil de **Evento**.
@@ -59,68 +59,84 @@ Este proyecto es una guía completa para construir un sistema de auto-respuesta 
             > *Descarta notificaciones resumen como "312 mensajes nuevos".*
         * **Title Filter:** Escribe `.*:.*`, marca la casilla **`Regex`** y marca la casilla **`Invert`**.
             > *Ignora cualquier mensaje de un chat de grupo.*
-    4.  Al salir, asocia este perfil a una **Tarea Nueva** y nómbrala `Asistente IA WhatsApp`.
+    4.  **Mantén pulsado el nombre del perfil** y toca el **icono de engranaje ⚙️** (Propiedades).
+    5.  Busca **`Cooldown Time`** y establécelo en **20 segundos**.
+        > *¡Crucial! Evita bucles y que WhatsApp/Android bloqueen las respuestas por ser demasiado rápidas, haciendo que el bot parezca más "humano".*
+    6.  Al salir, asocia este perfil a una **Tarea Nueva** y nómbrala `Asistente IA WhatsApp`.
 
 ### Paso 3: Construcción de la Tarea Principal (El Cerebro)
 
-Esta es la secuencia exacta y corregida de **30 acciones** que componen la tarea.
+Esta es la secuencia final y optimizada de acciones para la tarea `Asistente IA WhatsApp`.
 
-#### Fase 1: Recopilación y Preparación de Datos
-* **1. Detener si está Ocupado (Cerrojo)**
+#### Fase 1: Failsafe, Cerrojo y Recopilación de Datos
+* **1. Failsafe del Cerrojo (Watchdog)**
+    * `Tarea` → `Si`. Condición: `%AutopilotIsRunning` `~` `1` **Y** `%TIMES - %AutopilotStartTime` `>` `120`.
+    * **Por qué:** Es un sistema de auto-reparación. Si el cerrojo se ha quedado "pegado" por más de 2 minutos (120s), esta acción lo libera forzosamente.
+
+* **2. Liberar Cerrojo Atascado**
+    * `Variables` → `Borrar Variable`. Nombre: `%AutopilotIsRunning`.
+    * *Esta acción está anidada dentro del `Si` anterior.*
+
+* **3. Fin Si**
+    * `Tarea` → `Fin Si`.
+
+* **4. Detener si está Ocupado (Cerrojo)**
     * `Tarea` → `Detener`. Con Condición `Si`: `%AutopilotIsRunning` `~` `1`.
-    * **Por qué:** Evita colisiones. Si la tarea ya está procesando un mensaje, cualquier nueva activación se detiene aquí.
+    * **Por qué:** Es el semáforo principal. Si la tarea ya está procesando un mensaje, cualquier nueva activación se detiene aquí.
 
-* **2. Activar Cerrojo**
+* **5. Activar Cerrojo**
     * `Variables` → `Definir Variable`. Nombre: `%AutopilotIsRunning`, A: `1`.
-    * **Por qué:** "Cierra la puerta" para indicar que el proceso ha comenzado. Al ser una variable global, es visible para todas las demás ejecuciones.
+    * **Por qué:** "Cierra la puerta" para indicar que el proceso ha comenzado.
 
-* **3. Forzar Lectura de la Notificación**
-    * `Plugin` → `AutoNotification` → `Query`. Configuración: En `Apps`, selecciona tus apps de WhatsApp.
-    * **Por qué:** Garantiza que la tarea obtenga una copia fresca y estable de las variables de la notificación (`%antitle(1)`, `%antext`, etc.).
+* **6. Registrar Hora de Inicio del Cerrojo**
+    * `Variables` → `Definir Variable`. Nombre: `%AutopilotStartTime`, A: `%TIMES`.
+    * **Por qué:** Guarda la hora actual. Es necesario para que el Failsafe del paso 1 pueda calcular si el cerrojo se ha quedado atascado.
 
-* **4. Copiar Nombre Completo**
+* **7. Forzar Lectura de la Notificación**
+    * `Plugin` → `AutoNotification` → `Query`. Configuración: En `Apps`, selecciona tus apps de WhatsApp. En `Title`, pon `%antitle`. En `Text`, pon `%antext`.
+    * **Por qué:** Garantiza que la tarea obtenga una copia fresca y estable de las variables de la notificación, evitando "variables fantasma".
+
+* **8. Detener si es un Mensaje Propio (Anti-Bucle)**
+    * `Tarea` → `Detener`. Con Condición `Si`: `%antitle(1)` `~R` `(?i)You|Tú`.
+    * **Por qué:** Revisa si el remitente es "You" o "Tú". Si es así, detiene la tarea para evitar que el asistente se responda a sí mismo en un bucle infinito.
+
+* **9. Copiar Nombre Completo**
     * `Variables` → `Definir Variable`. Nombre: `%nombre_para_split`, A: `%antitle(1)`.
-    * **Por qué:** Creamos una copia segura para trabajar sobre ella, preservando la original.
 
-* **5. Extraer Primer Nombre**
+* **10. Extraer Primer Nombre**
     * `Variables` → `Variable Split`. Nombre: `%nombre_para_split`, Divisor: ` ` (un espacio).
-    * **Por qué:** Separa el nombre completo. El primer nombre queda en `%nombre_para_split1` para un saludo más personal.
+    * **Por qué:** El primer nombre queda en `%nombre_para_split1` para un saludo más personal.
 
-* **6-10. Variables de Configuración y Prompt Dinámico**
-    * **6. `Definir Variable`**: `%timeout_sesion_segundos`, A: `900`.
-    * **7. `Definir Variable`**: `%ruta_historiales`, A: `Tasker/ChatHistory`.
-    * **8. `Definir Variable`**: `%prompt_sistema`, A: *Pega aquí tu prompt en formato JSON (ver ejemplo abajo)*.
-    * **9. `Definir Variable`**: `%prompt_dinamico`, A: `%prompt_sistema`.
-    * **10. `Búsqueda Reemplazar Variable`**: Variable: `%prompt_dinamico`, Búsqueda: `%%USERNAME%%`, Reemplazar Con: `%nombre_para_split1`.
-    * **Por qué:** Separamos la configuración del código. Creamos una copia del prompt y la personalizamos dinámicamente.
+#### Fase 2: Configuración y Gestión de Memoria
+* **11-15. Variables y Prompt Dinámico**
+    * **11. `Definir Variable`**: `%timeout_sesion_segundos`, A: `900`.
+    * **12. `Definir Variable`**: `%ruta_historiales`, A: `Tasker/ChatHistory`.
+    * **13. `Definir Variable`**: `%prompt_sistema`, A: *Pega aquí tu prompt en formato JSON*.
+    * **14. `Definir Variable`**: `%prompt_dinamico`, A: `%prompt_sistema`.
+    * **15. `Búsqueda Reemplazar Variable`**: Variable: `%prompt_dinamico`, Búsqueda: `%%USERNAME%%`, Reemplazar Con: `%nombre_para_split1`.
 
-#### Fase 2: Gestión de la Memoria (Archivos de Historial)
-* **11. Limpiar Nombre para Archivo**
+* **16. Limpiar Nombre para Archivo**
     * `Variables` → `Búsqueda Reemplazar Variable`. Variable: `%antitle(1)`, Búsqueda: `\W`, Marcar `Regex`, Reemplazar Con: `_`.
-    * **Por qué:** Elimina caracteres especiales del nombre para crear un nombre de archivo válido.
 
-* **12. Construir Ruta del Archivo**
+* **17. Construir Ruta del Archivo**
     * `Variables` → `Definir Variable`. Nombre: `%archivo_historial`, A: `%ruta_historiales/%antitle(1)_history.json`.
 
-* **13. Inicializar Variable de Historial**
-    * `Variables` → `Definir Variable`. Nombre: `%historial_json_raw`, A: `[]`.
-    * **Por qué:** Asegura que la variable siempre exista, previniendo errores para contactos nuevos.
-
-* **14-22. Lógica de Timeout y Lectura del Historial (Bloque Corregido)**
-    * **14. `Probar Fichero`**: Ruta: `%archivo_historial`, Tipo: `Existe`, Guardar En: `%historial_existe`.
-    * **15. `Si`**: `%historial_existe` `~` `true`.
-        * **16. `Probar Fichero`**: Ruta: `%archivo_historial`, Tipo: `Fecha de Modificación`, Guardar En: `%fecha_ultimo_mensaje`.
-        * **17. `Definir Variable`**: `%segundos_desde_ultimo`, A: `%TIMES - %fecha_ultimo_mensaje`, Marcar `Hacer Cuentas`.
-        * **18. `Si`**: `%segundos_desde_ultimo > %timeout_sesion_segundos`.
-            * **19. `Borrar Fichero`**: Ruta: `%archivo_historial`, Marcar `Continuar Tarea Tras Error`.
-        * **20. `Si no`** (Else).
-            * **21. `Leer Fichero`**: Fichero: `%archivo_historial`, A Variable: `%historial_json_raw`.
-        * **22. `Fin Si`**.
-    * **23. `Fin Si`**
-    * **Por qué:** Esta estructura es robusta. Comprueba si el archivo existe. Si existe, comprueba su antigüedad: si es viejo lo borra, si no es viejo lo lee. El `Fin Si` final (#23) cierra correctamente el bloque que comenzó en la acción #15.
+* **18-26. Lógica de Timeout y Lectura del Historial**
+    * **18. `Probar Fichero`**: Ruta: `%archivo_historial`, Tipo: `Existe`, Guardar En: `%historial_existe`.
+    * **19. `Definir Variable`**: `%historial_json_raw`, A: `[]`.
+    * **20. `Si`**: `%historial_existe` `~` `true`.
+        * **21. `Probar Fichero`**: Ruta: `%archivo_historial`, Tipo: `Fecha de Modificación`, Guardar En: `%fecha_ultimo_mensaje`.
+        * **22. `Definir Variable`**: `%segundos_desde_ultimo`, A: `%TIMES - %fecha_ultimo_mensaje`, Marcar `Hacer Cuentas`.
+        * **23. `Si`**: `%segundos_desde_ultimo > %timeout_sesion_segundos`.
+            * **24. `Borrar Fichero`**: Ruta: `%archivo_historial`, Marcar `Continuar Tarea Tras Error`.
+        * **25. `Si no`** (Else).
+            * **26. `Leer Fichero`**: Fichero: `%archivo_historial`, A Variable: `%historial_json_raw`.
+        * **27. `Fin Si`**.
+    * **28. `Fin Si`**.
+    * **Por qué:** Esta estructura robusta comprueba si un archivo existe y es reciente. Si es viejo, lo borra; si es reciente, lo lee. Si no existe, no hace nada. Esto evita cualquier error de "archivo no encontrado".
 
 #### Fase 3: Comunicación con la IA
-* **24. Preparar Envío (JavaScriptlet)**
+* **29. Preparar Envío (JavaScriptlet)**
     * `Código` → `JavaScriptlet`. **Código:**
         ```javascript
         const oldHistoryJson = historial_json_raw;
@@ -136,12 +152,11 @@ Esta es la secuencia exacta y corregida de **30 acciones** que componen la tarea
         setLocal('messages_array_json', JSON.stringify(messages));
         ```
 
-* **25. Petición HTTP**
+* **30. Petición HTTP**
     * `Red` → `Petición HTTP`.
-    * **Configuración:** Método `POST`, URL `https://api.openai.com/v1/chat/completions`, Cabeceras con `%AI_API_KEY`, Cuerpo con `%messages_array_json`, Timeout `60s`, Marcar `Confía en cualquier certificado` y **`Continuar Tarea Tras Error`**.
-    * **Por qué "Continuar Tras Error":** Para asegurar que, incluso si la conexión a internet falla, la tarea llegue al final y libere el cerrojo.
+    * **Configuración:** Método `POST`, URL de la API, Cabeceras con `%AI_API_KEY`, Cuerpo con `%messages_array_json`, Timeout `60s`, Marcar `Confía en cualquier certificado` y **`Continuar Tarea Tras Error`**.
 
-* **26. Procesar Respuesta (JavaScriptlet)**
+* **31. Procesar Respuesta (JavaScriptlet)**
     * `Código` → `JavaScriptlet`. **Código:**
         ```javascript
         try {
@@ -164,29 +179,27 @@ Esta es la secuencia exacta y corregida de **30 acciones** que componen la tarea
         ```
 
 #### Fase 4: Guardado, Respuesta y Limpieza
-* **27. Guardar Historial Actualizado**
-    * `Fichero` → `Escribir Fichero`.
-    * **Configuración:** Fichero: `%archivo_historial`, Texto: `%new_history_to_save`.
-    * **Por qué:** La acción crucial que da "memoria" al asistente.
+* **32. Guardar Historial Actualizado**
+    * `Fichero` → `Escribir Fichero`. Configuración: Fichero: `%archivo_historial`, Texto: `%new_history_to_save`.
 
-* **28. Responder Mensaje**
+* **33. Pausa de "Humanización"**
+    * `Tarea` → `Esperar`. Segundos: `3`.
+    * **Por qué:** Añade un retardo antes de responder para que el asistente parezca más humano y evitar que WhatsApp lo marque como spam.
+
+* **34. Responder Mensaje**
     * `Plugin` → `AutoNotification` → `Reply`.
-    * **Configuración:** Reply Text: `%gpt_reply`, Reply Action ID: `%anreplyaction(1)`, Marcar `Cancel Before Replying` y **`Continuar Tarea Tras Error`**.
-    * **Por qué "Continuar Tras Error":** Si la notificación original ya no existe, esta acción fallará. Necesitamos que la tarea continúe para liberar el cerrojo.
+    * **Configuración:** Reply Text: `%gpt_reply`, Reply Action ID: `%anreplyaction(1)`, **DESMARCAR** `Cancel Before Replying` y Marcar **`Continuar Tarea Tras Error`**.
 
-* **29. Liberar Cerrojo (Limpieza Final)**
-    * `Variables` → `Borrar Variable`.
-    * **Nombre:** `%AutopilotIsRunning`.
-    * **Por qué:** "Abre la puerta" para que el siguiente mensaje en la cola pueda ser procesado.
+* **35. Liberar Cerrojo (Limpieza Final)**
+    * `Variables` → `Borrar Variable`. Nombre: `%AutopilotIsRunning`.
 
-* **30. Manejo de Colisiones (Propiedades de Tarea)**
+* **Propiedades de Tarea:**
     * Dentro de la tarea, toca el **icono de engranaje ⚙️**.
     * En **Manejo de Colisiones**, selecciona `Abortar Tarea Nueva`.
-    * **Por qué:** Como tu versión de Tasker no tiene `Ejecutar en Secuencia`, esta es la opción más segura. Junto con nuestro cerrojo manual, si llegan dos mensajes al mismo tiempo, el primero pasará y el segundo será ignorado, evitando un error. Es una limitación necesaria para asegurar la estabilidad del sistema.
 
 ### ✍️ Paso 4: Ejemplo de Prompt para el Asistente
 
-Puedes usar esta plantilla como base para tu variable `%prompt_sistema`. Recuerda que `%%USERNAME%%` será reemplazado automáticamente por el primer nombre del contacto.
+Puedes usar esta plantilla como base para tu variable `%prompt_sistema`.
 
 ```json
 {
